@@ -24,6 +24,11 @@ export default function DashboardPage() {
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
+  
+  const [selectedBooking, setSelectedBooking] = useState<any>(null);
+  const [addingLesson, setAddingLesson] = useState(false);
+  const [lessonDate, setLessonDate] = useState("");
+  const [lessonNote, setLessonNote] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -173,6 +178,80 @@ export default function DashboardPage() {
       </main>
     </div>
   );
+
+  const bookingTypeLabel = (type: string) => {
+    if (!type || type === "single") return "Единоразово";
+    if (type === "range") return "Диапазон дат";
+    if (type === "subscription") return "Абонемент";
+    return type;
+  };
+
+  const lessonStatusLabel = (status: string) => {
+    if (status === "scheduled") return { label: "Запланировано", color: "text-gray-500" };
+    if (status === "completed") return { label: "Проведено", color: "text-green-600" };
+    if (status === "missed") return { label: "Пропущено", color: "text-red-500" };
+    if (status === "cancelled") return { label: "Отменено", color: "text-gray-400" };
+    return { label: status, color: "text-gray-500" };
+  };
+
+  const handleAddLesson = async (bookingId: number) => {
+    const token = localStorage.getItem("token");
+    setAddingLesson(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/${bookingId}/lessons`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ lesson_date: lessonDate || undefined, tutor_note: lessonNote || undefined }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const updated = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/${bookingId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // обновляем selectedBooking
+      await loadBookings(profile.role);
+      setLessonDate("");
+      setLessonNote("");
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setAddingLesson(false);
+    }
+  };
+
+  const handleLessonStatus = async (bookingId: number, lessonId: number, status: string) => {
+    const token = localStorage.getItem("token");
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/${bookingId}/lessons/${lessonId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status }),
+      });
+      // Перезагружаем заявки
+      loadBookings(profile.role);
+      setSelectedBooking((prev: any) => prev ? {
+        ...prev,
+        lessons: prev.lessons.map((l: any) => l.id === lessonId ? { ...l, status } : l)
+      } : null);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleWithdraw = async (bookingId: number) => {
+    const token = localStorage.getItem("token");
+    if (!confirm("Вы уверены, что хотите отказаться от заявки?")) return;
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/${bookingId}/withdraw`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
+      loadBookings(profile.role);
+      setSelectedBooking(null);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -330,48 +409,52 @@ export default function DashboardPage() {
             ) : (
               <div className="space-y-4">
                 {bookings.map((b: any) => (
-                  <div key={b.id} className="border border-gray-100 rounded-lg p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-800">
+                  <div key={b.id} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium text-gray-900">
                           {profile.role === "student" ? `Репетитор: ${b.tutor_name}` : `Ученик: ${b.student_name}`}
                         </p>
-                        {b.subject && <p className="text-sm text-gray-500 mt-1">Предмет: {b.subject}</p>}
-                        {b.message && <p className="text-sm text-gray-600 mt-1 italic">«{b.message}»</p>}
-                        {b.fail_reason && (
-                          <p className="text-sm text-orange-600 mt-1">
-                            <AlertCircle className="w-3 h-3 inline mr-1" />
-                            Причина: {b.fail_reason}
+                        {b.subject && <p className="text-sm text-gray-600">Предмет: {b.subject}</p>}
+                        <p className="text-sm text-gray-500">{bookingTypeLabel(b.booking_type)}</p>
+                        {b.booking_type === "range" && b.date_from && (
+                          <p className="text-sm text-gray-500">
+                            {new Date(b.date_from).toLocaleDateString("ru-RU")} — {new Date(b.date_to).toLocaleDateString("ru-RU")}
                           </p>
                         )}
-                        <p className="text-xs text-gray-400 mt-2">{new Date(b.created_at).toLocaleDateString("ru-RU")}</p>
+                        {b.booking_type === "subscription" && b.total_lessons && (
+                          <p className="text-sm text-gray-500">
+                            {b.completed_lessons} из {b.total_lessons} занятий
+                          </p>
+                        )}
+                        {b.booking_type === "single" && b.date_single && (
+                          <p className="text-sm text-gray-500">{new Date(b.date_single).toLocaleDateString("ru-RU")}</p>
+                        )}
                       </div>
-                      <div className="flex flex-col items-end gap-2 ml-4">
-                        {statusBadge(b.status)}
-                        {profile.role === "tutor" && b.status === "pending" && (
-                          <div className="flex gap-2 mt-1">
-                            <button onClick={() => handleBookingAction(b.id, "accepted")}
-                              className="flex items-center gap-1 bg-green-500 text-white text-xs px-3 py-1 rounded-md hover:bg-green-600 transition">
-                              <CheckCircle className="w-3 h-3" /> Принять
-                            </button>
-                            <button onClick={() => handleBookingAction(b.id, "rejected")}
-                              className="flex items-center gap-1 bg-red-500 text-white text-xs px-3 py-1 rounded-md hover:bg-red-600 transition">
-                              <XCircle className="w-3 h-3" /> Отклонить
-                            </button>
-                          </div>
-                        )}
-                        {profile.role === "tutor" && b.status === "accepted" && (
-                          <button onClick={() => openCompleteModal(b.id)}
-                            className="flex items-center gap-1 bg-blue-500 text-white text-xs px-3 py-1 rounded-md hover:bg-blue-600 transition mt-1">
-                            <CheckCircle className="w-3 h-3" /> Завершить заявку
-                          </button>
-                        )}
-                        {profile.role === "student" && (b.status === "pending" || b.status === "accepted") && (
-                          <button onClick={() => handleCancel(b.id)}
-                            className="flex items-center gap-1 bg-gray-200 text-gray-600 text-xs px-3 py-1 rounded-md hover:bg-gray-300 transition mt-1">
-                            <XCircle className="w-3 h-3" /> Отменить заявку
-                          </button>
-                        )}
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                          b.status === "pending" ? "bg-yellow-100 text-yellow-700" :
+                          b.status === "accepted" ? "bg-blue-100 text-blue-700" :
+                          b.status === "in_progress" ? "bg-purple-100 text-purple-700" :
+                          b.status === "completed" ? "bg-green-100 text-green-700" :
+                          b.status === "cancelled" ? "bg-gray-100 text-gray-500" :
+                          b.status === "rejected" ? "bg-red-100 text-red-500" :
+                          "bg-gray-100 text-gray-500"
+                        }`}>
+                          {b.status === "pending" ? "Ожидает" :
+                          b.status === "accepted" ? "Принята" :
+                          b.status === "in_progress" ? "В процессе" :
+                          b.status === "completed" ? "Завершена" :
+                          b.status === "cancelled" ? "Отменена" :
+                          b.status === "rejected" ? "Отклонена" :
+                          b.status === "failed" ? "Сорвалась" : b.status}
+                        </span>
+                        <button
+                          onClick={() => setSelectedBooking(b)}
+                          className="text-sm text-blue-500 hover:underline"
+                        >
+                          Подробнее →
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -469,6 +552,184 @@ export default function DashboardPage() {
           <p className="text-gray-400">© 2025 StudyFinder. Все права защищены.</p>
         </div>
       </footer>
+            {/* Модалка подробнее */}
+      {selectedBooking && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Заявка #{selectedBooking.id}</h3>
+              <button onClick={() => setSelectedBooking(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+
+            <div className="space-y-2 text-sm text-gray-700 mb-4">
+              {profile.role === "student"
+                ? <p><span className="font-medium">Репетитор:</span> {selectedBooking.tutor_name}</p>
+                : <p><span className="font-medium">Ученик:</span> {selectedBooking.student_name}</p>
+              }
+              {selectedBooking.subject && <p><span className="font-medium">Предмет:</span> {selectedBooking.subject}</p>}
+              <p><span className="font-medium">Тип:</span> {bookingTypeLabel(selectedBooking.booking_type)}</p>
+
+              {selectedBooking.booking_type === "single" && selectedBooking.date_single && (
+                <p><span className="font-medium">Дата:</span> {new Date(selectedBooking.date_single).toLocaleDateString("ru-RU")}</p>
+              )}
+              {selectedBooking.booking_type === "range" && (
+                <>
+                  <p><span className="font-medium">Период:</span> {new Date(selectedBooking.date_from).toLocaleDateString("ru-RU")} — {new Date(selectedBooking.date_to).toLocaleDateString("ru-RU")}</p>
+                  <p><span className="font-medium">Занятий в неделю:</span> {selectedBooking.lessons_per_week}</p>
+                </>
+              )}
+              {selectedBooking.booking_type === "subscription" && (
+                <>
+                  <p><span className="font-medium">Всего занятий:</span> {selectedBooking.total_lessons}</p>
+                  {selectedBooking.schedule_note && <p><span className="font-medium">Расписание:</span> {selectedBooking.schedule_note}</p>}
+                </>
+              )}
+
+              {/* Прогресс-бар для subscription/range */}
+              {selectedBooking.total_lessons > 0 && (
+                <div>
+                  <p className="font-medium mb-1">Прогресс: {selectedBooking.completed_lessons} / {selectedBooking.total_lessons}</p>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min((selectedBooking.completed_lessons / selectedBooking.total_lessons) * 100, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {selectedBooking.message && (
+                <p><span className="font-medium">Сообщение:</span> «{selectedBooking.message}»</p>
+              )}
+              {selectedBooking.fail_reason && (
+                <p className="text-red-500"><span className="font-medium">Причина:</span> {selectedBooking.fail_reason}</p>
+              )}
+            </div>
+
+            {/* История занятий */}
+            {selectedBooking.lessons && selectedBooking.lessons.length > 0 && (
+              <div className="mb-4">
+                <p className="font-medium text-gray-800 mb-2">История занятий:</p>
+                <div className="space-y-2">
+                  {selectedBooking.lessons.map((lesson: any) => {
+                    const { label, color } = lessonStatusLabel(lesson.status);
+                    return (
+                      <div key={lesson.id} className="flex justify-between items-center border border-gray-100 rounded-lg p-2">
+                        <div>
+                          <p className="text-sm text-gray-700">
+                            {lesson.lesson_date ? new Date(lesson.lesson_date).toLocaleDateString("ru-RU") : "Дата не указана"}
+                          </p>
+                          {lesson.tutor_note && <p className="text-xs text-gray-400">{lesson.tutor_note}</p>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-medium ${color}`}>{label}</span>
+                          {/* Кнопки смены статуса — только для репетитора */}
+                          {profile.role === "tutor" && lesson.status === "scheduled" && (
+                            <>
+                              <button
+                                onClick={() => handleLessonStatus(selectedBooking.id, lesson.id, "completed")}
+                                className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200"
+                              >✓ Проведено</button>
+                              <button
+                                onClick={() => handleLessonStatus(selectedBooking.id, lesson.id, "missed")}
+                                className="text-xs bg-red-100 text-red-500 px-2 py-1 rounded hover:bg-red-200"
+                              >✗ Пропущено</button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Добавить занятие — только репетитор */}
+            {profile.role === "tutor" && ["accepted", "in_progress"].includes(selectedBooking.status) && (
+              <div className="border-t pt-4 mb-4">
+                <p className="font-medium text-gray-800 mb-2">Добавить занятие:</p>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="date"
+                    value={lessonDate}
+                    onChange={(e) => setLessonDate(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900"
+                  />
+                </div>
+                <textarea
+                  value={lessonNote}
+                  onChange={(e) => setLessonNote(e.target.value)}
+                  rows={2}
+                  placeholder="Заметка (необязательно)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm text-gray-900 mb-2"
+                />
+                <button
+                  onClick={() => handleAddLesson(selectedBooking.id)}
+                  disabled={addingLesson}
+                  className="bg-blue-500 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-600 transition"
+                >
+                  {addingLesson ? "Добавление..." : "Добавить занятие"}
+                </button>
+              </div>
+            )}
+
+            {/* Кнопки действий */}
+            <div className="border-t pt-4 flex gap-3 flex-wrap">
+              {/* Ученик: отменить */}
+              {profile.role === "student" && ["pending", "accepted", "in_progress"].includes(selectedBooking.status) && (
+                <button
+                  onClick={async () => {
+                    const token = localStorage.getItem("token");
+                    if (!confirm("Отменить заявку?")) return;
+                    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/${selectedBooking.id}/cancel`, {
+                      method: "PATCH", headers: { Authorization: `Bearer ${token}` }
+                    });
+                    loadBookings(profile.role);
+                    setSelectedBooking(null);
+                  }}
+                  className="px-4 py-2 bg-red-100 text-red-600 rounded-md text-sm hover:bg-red-200 transition"
+                >
+                  Отозвать заявку
+                </button>
+              )}
+              {/* Репетитор: принять/отклонить */}
+              {profile.role === "tutor" && selectedBooking.status === "pending" && (
+                <>
+                  <button
+                    onClick={async () => {
+                      const token = localStorage.getItem("token");
+                      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/${selectedBooking.id}/status?status=accepted`, {
+                        method: "PATCH", headers: { Authorization: `Bearer ${token}` }
+                      });
+                      loadBookings(profile.role);
+                      setSelectedBooking(null);
+                    }}
+                    className="px-4 py-2 bg-green-100 text-green-700 rounded-md text-sm hover:bg-green-200 transition"
+                  >Принять</button>
+                  <button
+                    onClick={async () => {
+                      const token = localStorage.getItem("token");
+                      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings/${selectedBooking.id}/status?status=rejected`, {
+                        method: "PATCH", headers: { Authorization: `Bearer ${token}` }
+                      });
+                      fetchBookings();
+                      setSelectedBooking(null);
+                    }}
+                    className="px-4 py-2 bg-red-100 text-red-500 rounded-md text-sm hover:bg-red-200 transition"
+                  >Отклонить</button>
+                </>
+              )}
+              {/* Репетитор: отказаться от активной заявки */}
+              {profile.role === "tutor" && ["accepted", "in_progress"].includes(selectedBooking.status) && (
+                <button
+                  onClick={() => handleWithdraw(selectedBooking.id)}
+                  className="px-4 py-2 bg-gray-100 text-gray-600 rounded-md text-sm hover:bg-gray-200 transition"
+                >Отказаться от заявки</button>
+              )}
+            </div>
+          </div>
+        </div>
+    )}
     </div>
   );
 }

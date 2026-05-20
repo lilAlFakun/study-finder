@@ -6,10 +6,12 @@ from app.database import get_db
 from app.models.user import User
 from app.models.review import Review
 from app.schemas.tutor import TutorCard, ReviewCreate, ReviewOut
-from app.models.booking import BookingRequest as BookingModel
+from app.models.booking import BookingRequest as BookingModel, Lesson
 from app.auth import get_current_user
 
+
 router = APIRouter(prefix="/tutors", tags=["tutors"])
+
 
 @router.get("", response_model=list[TutorCard])
 async def get_tutors(
@@ -41,11 +43,12 @@ async def get_tutors(
         )
         avg_rating, review_count = rating_result.one()
 
-        # ← добавь это
         lessons_result = await db.execute(
-            select(func.count()).where(
+            select(func.count(Lesson.id))
+            .join(BookingModel, BookingModel.id == Lesson.booking_id)
+            .where(
                 BookingModel.tutor_id == tutor.id,
-                BookingModel.lesson_held == True
+                Lesson.status == "completed"
             )
         )
         lessons_count = lessons_result.scalar() or 0
@@ -67,6 +70,7 @@ async def get_tutors(
 
     return tutor_cards
 
+
 @router.get("/{tutor_id}", response_model=TutorCard)
 async def get_tutor(tutor_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
@@ -81,13 +85,17 @@ async def get_tutor(tutor_id: int, db: AsyncSession = Depends(get_db)):
         .where(Review.tutor_id == tutor_id)
     )
     avg_rating, review_count = rating_result.one()
+
     lessons_result = await db.execute(
-        select(func.count()).where(
+        select(func.count(Lesson.id))
+        .join(BookingModel, BookingModel.id == Lesson.booking_id)
+        .where(
             BookingModel.tutor_id == tutor_id,
-            BookingModel.lesson_held == True
+            Lesson.status == "completed"
         )
     )
     lessons_count = lessons_result.scalar() or 0
+
     return TutorCard(
         id=tutor.id,
         name=tutor.name,
@@ -102,6 +110,7 @@ async def get_tutor(tutor_id: int, db: AsyncSession = Depends(get_db)):
         review_count=review_count or 0,
         lessons_count=lessons_count,
     )
+
 
 @router.post("/reviews", response_model=ReviewOut)
 async def leave_review(
@@ -128,6 +137,8 @@ async def leave_review(
     await db.commit()
     await db.refresh(review)
     return review
+
+
 @router.get("/{tutor_id}/reviews")
 async def get_tutor_reviews(tutor_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(

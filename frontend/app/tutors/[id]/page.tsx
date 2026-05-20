@@ -16,7 +16,17 @@ export default function TutorPage() {
   const [reviewError, setReviewError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showBookingForm, setShowBookingForm] = useState(false);
-  const [bookingForm, setBookingForm] = useState({ subject: "", message: "" });
+  const [bookingForm, setBookingForm] = useState({
+    subject: "",
+    message: "",
+    booking_type: "single",
+    date_single: "",
+    date_from: "",
+    date_to: "",
+    lessons_per_week: 1,
+    total_lessons: "",
+    schedule_note: "",
+  });
   const [bookingMsg, setBookingMsg] = useState("");
   const [bookingError, setBookingError] = useState("");
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -30,10 +40,36 @@ export default function TutorPage() {
     setBookingLoading(true);
     setBookingError("");
     try {
-      await createBooking({ tutor_id: Number(id), ...bookingForm });
+      const payload: any = {
+        tutor_id: Number(id),
+        subject: bookingForm.subject,
+        message: bookingForm.message,
+        booking_type: bookingForm.booking_type,
+      };
+      if (bookingForm.booking_type === "single") {
+        payload.date_single = bookingForm.date_single || undefined;
+      } else if (bookingForm.booking_type === "range") {
+        payload.date_from = bookingForm.date_from || undefined;
+        payload.date_to = bookingForm.date_to || undefined;
+        payload.lessons_per_week = bookingForm.lessons_per_week;
+      } else if (bookingForm.booking_type === "subscription") {
+        payload.total_lessons = bookingForm.total_lessons ? Number(bookingForm.total_lessons) : undefined;
+        payload.schedule_note = bookingForm.schedule_note || undefined;
+      }
+      await createBooking(payload);
       setBookingMsg("Заявка успешно отправлена! Репетитор рассмотрит её в ближайшее время.");
       setShowBookingForm(false);
-      setBookingForm({ subject: "", message: "" });
+      setBookingForm({
+        subject: "",
+        message: "",
+        booking_type: "single",
+        date_single: "",
+        date_from: "",
+        date_to: "",
+        lessons_per_week: 1,
+        total_lessons: "",
+        schedule_note: "",
+      });
     } catch (err: any) {
       setBookingError(err.message);
     } finally {
@@ -184,30 +220,135 @@ export default function TutorPage() {
       </button>
     ) : (
       <form onSubmit={handleBooking} className="space-y-4">
+        {/* Предмет */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Предмет</label>
-          <input type="text"
+          <input
+            type="text"
             value={bookingForm.subject}
-            onChange={e => setBookingForm({ ...bookingForm, subject: e.target.value })}
+            onChange={(e) => setBookingForm({ ...bookingForm, subject: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-            placeholder="Например: Математика, ЕГЭ" />
+            placeholder="Например: Математика, ЕГЭ"
+          />
         </div>
+
+        {/* Тип занятий */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Тип занятий</label>
+          <select
+            value={bookingForm.booking_type}
+            onChange={(e) => setBookingForm({ ...bookingForm, booking_type: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+          >
+            <option value="single">Единоразово</option>
+            <option value="range">Диапазон дат</option>
+            <option value="subscription">Фиксированное кол-во занятий</option>
+          </select>
+        </div>
+
+        {/* Поля для single */}
+        {bookingForm.booking_type === "single" && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Дата занятия</label>
+            <input
+              type="date"
+              value={bookingForm.date_single}
+              onChange={(e) => setBookingForm({ ...bookingForm, date_single: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+            />
+          </div>
+        )}
+
+        {/* Поля для range */}
+        {bookingForm.booking_type === "range" && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Дата начала</label>
+                <input
+                  type="date"
+                  value={bookingForm.date_from}
+                  onChange={(e) => setBookingForm({ ...bookingForm, date_from: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Дата окончания</label>
+                <input
+                  type="date"
+                  value={bookingForm.date_to}
+                  onChange={(e) => setBookingForm({ ...bookingForm, date_to: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Занятий в неделю</label>
+              <select
+                value={bookingForm.lessons_per_week}
+                onChange={(e) => setBookingForm({ ...bookingForm, lessons_per_week: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+              >
+                {[1,2,3,4,5,6,7].map(n => (
+                  <option key={n} value={n}>{n} раз в неделю</option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+
+        {/* Поля для subscription */}
+        {bookingForm.booking_type === "subscription" && (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Количество занятий</label>
+              <input
+                type="number"
+                min={1}
+                value={bookingForm.total_lessons}
+                onChange={(e) => setBookingForm({ ...bookingForm, total_lessons: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                placeholder="Например: 8"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Пожелания по расписанию</label>
+              <textarea
+                value={bookingForm.schedule_note}
+                onChange={(e) => setBookingForm({ ...bookingForm, schedule_note: e.target.value })}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                placeholder="Например: по вторникам и четвергам вечером"
+              />
+            </div>
+          </>
+        )}
+
+        {/* Сообщение */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Сообщение репетитору</label>
           <textarea
             value={bookingForm.message}
-            onChange={e => setBookingForm({ ...bookingForm, message: e.target.value })}
+            onChange={(e) => setBookingForm({ ...bookingForm, message: e.target.value })}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-            placeholder="Укажите удобное время, цели обучения..." />
+            placeholder="Укажите цели обучения..."
+          />
         </div>
+
         <div className="flex gap-3">
-          <button type="submit" disabled={bookingLoading}
-            className="bg-blue-500 text-white px-6 py-2 rounded-md hover:bg-blue-600 transition disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={bookingLoading}
+            className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition"
+          >
             {bookingLoading ? "Отправка..." : "Отправить заявку"}
           </button>
-          <button type="button" onClick={() => setShowBookingForm(false)}
-            className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition">
+          <button
+            type="button"
+            onClick={() => setShowBookingForm(false)}
+            className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition"
+          >
             Отмена
           </button>
         </div>
@@ -254,7 +395,7 @@ export default function TutorPage() {
         </div>
 
         {/* Форма отзыва — только для учеников */}
-        {userRole === "student" && (
+      {userRole === "student" && (
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-lg font-bold text-gray-800 mb-4">Оставить отзыв</h2>
             {reviewMsg && <div className="bg-green-100 text-green-700 p-3 rounded-md mb-4">{reviewMsg}</div>}
