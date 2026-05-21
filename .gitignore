@@ -1,11 +1,24 @@
-﻿# Python
+﻿# Никогда не заливать в GitHub!
+.env
+.env.local
+.env.production
+backend/.env
+alembic/.env
+
+# Python
 __pycache__/
 *.pyc
-.env
+*.pyo
+.venv/
+venv/
 
 # Node
 node_modules/
 .next/
 
-# Docker
-*.log
+# Uploads (пользовательские файлы)
+backend/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
